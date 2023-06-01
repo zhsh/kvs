@@ -27,14 +27,28 @@ void setup() {
   Serial.println("Bluetooth Started! Ready to pair...");
 }
 
+String readLine() {
+  String line;
+  while (true) {
+    int c = SerialBT.read();
+    if (c == -1) {
+      continue;
+    }
+    if (c == '\n') {
+      return line;
+    }
+    line += char(c);
+  }
+}
+
 void loop() {
-  if (Serial.available())
-  {
-    SerialBT.write(Serial.read());
-  }
-  if (SerialBT.available())
-  {
-    Serial.write(SerialBT.read());
-  }
+  String s = readLine();
+  Serial.println(s);
+  String toSend = s;
+  toSend.toUpperCase();
+  toSend += '\n';
+  Serial.print(toSend);
+  SerialBT.write((const uint8_t*)toSend.c_str(), toSend.length());
+
   delay(20);
 }
