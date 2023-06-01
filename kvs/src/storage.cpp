@@ -1,5 +1,7 @@
 #include "storage.hpp"
 #include "Arduino.h"
+
+#ifdef ESP32
 #include "esp_debug_helpers.h"
 #include "nvs_flash.h"
 #include "rom/crc.h"
@@ -195,3 +197,5 @@ std::string Storage::Get(const char *key) {
 std::string Storage::List() const {
     return "Not implemented yet";
 }
+
+#endif
