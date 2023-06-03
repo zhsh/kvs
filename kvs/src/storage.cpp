@@ -24,7 +24,7 @@ void FlashStorage::Write(uint32_t pos, const char*buf, uint32_t length) {
 
   esp_err_t res = esp_flash_write(esp_flash_default_chip, buf, start_ + pos, length);
   if (res != ESP_OK) {
-    printf("Failed to write %d to %d: err %d\n", buf, 0, res);
+    printf("Failed to write %s to %d: err %d\n", buf, 0, res);
     fail();
   }
 }
@@ -46,7 +46,7 @@ void FlashStorage::Read(uint32_t pos, char*buf, uint32_t length) {
 
 void FlashStorage::Erase(uint32_t pos, uint32_t length) {
   BoundsCheck("erase", pos, length);
-  if (length & ~(kBlockSize - 1) != 0 || length == 0) {
+  if ((length & ~(kBlockSize - 1)) != 0 || length == 0) {
     Serial.printf("Incorrect erase alignment: length=0x%x", length);
     fail();
   }
@@ -76,7 +76,7 @@ bool FlashStorage::Init() {
     auto *partition = esp_partition_get(it);
     Serial.printf("Type: %d Subtype: %d, Addr: 0x%x, Size: 0x%x Label: %s\n",
         partition->type, partition->subtype, partition->address, partition->size,
-        partition->label != nullptr ? partition->label : "<no label>");
+        partition->label);
     it = esp_partition_next(it);
   }
 
