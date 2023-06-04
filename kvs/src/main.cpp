@@ -63,21 +63,55 @@ void loop() {
   Adapted from Arduino BatteryMonitor example
 */
 
-#include "ArduinoBLE.h"
+#include <ArduinoBLE.h>
 
-// the setup function runs once when you press reset or power the board
+static const char* greeting = "Hello World!";
+
+BLEService greetingService("180C");  // User defined service
+
+BLEStringCharacteristic greetingCharacteristic("2A56",  // standard 16-bit characteristic UUID
+    BLERead, 13); // remote clients will only be able to read this
+
 void setup() {
-  // initialize digital pin LED_BUILTIN as an output.
-  pinMode(LED_BUILTIN, OUTPUT);
-  Serial.begin(9600);
+  Serial.begin(9600);    // initialize serial communication
+  while (!Serial);
+
+  pinMode(LED_BUILTIN, OUTPUT); // initialize the built-in LED pin
+
+  if (!BLE.begin()) {   // initialize BLE
+    Serial.println("starting BLE failed!");
+    while (1);
+  }
+
+  BLE.setLocalName("Nano33BLE");  // Set name for connection
+  BLE.setAdvertisedService(greetingService); // Advertise service
+  greetingService.addCharacteristic(greetingCharacteristic); // Add characteristic to service
+  BLE.addService(greetingService); // Add service
+  greetingCharacteristic.setValue(greeting); // Set greeting string
+
+  BLE.advertise();  // Start advertising
+  Serial.print("Peripheral device MAC: ");
+  Serial.println(BLE.address());
+  Serial.println("Waiting for connections...");
 }
 
-// the loop function runs over and over again forever
 void loop() {
-  Serial.print(".");
-  digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
-  delay(1000);                       // wait for a second
-  digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
-  delay(1000);                       // wait for a second
+  BLEDevice central = BLE.central();  // Wait for a BLE central to connect
+
+  // if a central is connected to the peripheral:
+  if (central) {
+    Serial.print("Connected to central MAC: ");
+    // print the central's BT address:
+    Serial.println(central.address());
+    // turn on the LED to indicate the connection:
+    digitalWrite(LED_BUILTIN, HIGH);
+
+    while (central.connected()){} // keep looping while connected
+
+    // when the central disconnects, turn off the LED:
+    digitalWrite(LED_BUILTIN, LOW);
+    Serial.print("Disconnected from central MAC: ");
+    Serial.println(central.address());
+  }
 }
 #endif
