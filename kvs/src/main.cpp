@@ -1,3 +1,4 @@
+#include "BLEProperty.h"
 #ifdef ESP32
 
 #include <Arduino.h>
@@ -65,12 +66,10 @@ void loop() {
 
 #include <ArduinoBLE.h>
 
-static const char* greeting = "Hello World!";
+BLEService battery("180F");  // User defined service
 
-BLEService greetingService("180C");  // User defined service
-
-BLEStringCharacteristic greetingCharacteristic("2A56",  // standard 16-bit characteristic UUID
-    BLERead, 13); // remote clients will only be able to read this
+BLEUnsignedCharCharacteristic batteryLevel("2A19", BLERead | BLENotify);
+BLEDescriptor batteryLevelDescriptor("2901", "Percentage 0 - 100");
 
 void setup() {
   Serial.begin(9600);    // initialize serial communication
@@ -84,16 +83,20 @@ void setup() {
   }
 
   BLE.setLocalName("Nano33BLE");  // Set name for connection
-  BLE.setAdvertisedService(greetingService); // Advertise service
-  greetingService.addCharacteristic(greetingCharacteristic); // Add characteristic to service
-  BLE.addService(greetingService); // Add service
-  greetingCharacteristic.setValue(greeting); // Set greeting string
+  BLE.setAdvertisedService(battery); // Advertise service
+  batteryLevel.addDescriptor(batteryLevelDescriptor);
+  batteryLevel.setValue(75);
+  battery.addCharacteristic(batteryLevel); // Add characteristic to service
+  BLE.addService(battery); // Add service
 
   BLE.advertise();  // Start advertising
   Serial.print("Peripheral device MAC: ");
   Serial.println(BLE.address());
   Serial.println("Waiting for connections...");
 }
+
+int batteryPercent = 75;
+unsigned long last_update = 0;
 
 void loop() {
   BLEDevice central = BLE.central();  // Wait for a BLE central to connect
@@ -106,7 +109,18 @@ void loop() {
     // turn on the LED to indicate the connection:
     digitalWrite(LED_BUILTIN, HIGH);
 
-    while (central.connected()){} // keep looping while connected
+    while (central.connected()) {
+      delay(10);
+      unsigned long ms = millis();
+      if (ms - last_update > 1000) {
+        last_update = ms;
+        batteryPercent = (batteryPercent + 24) % 100;
+        batteryLevel.setValue(batteryPercent);
+        batteryLevel.broadcast();
+        Serial.print("Battery: ");
+        Serial.println(batteryPercent);
+      }
+    }
 
     // when the central disconnects, turn off the LED:
     digitalWrite(LED_BUILTIN, LOW);
