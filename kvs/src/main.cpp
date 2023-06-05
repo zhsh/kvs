@@ -57,31 +57,44 @@ void loop() {
 }
 #else
 
-/*
-  Arduino Nano 33 BLE Getting Started
-  BLE peripheral with a simple Hello World greeting service that can be viewed
-  on a mobile phone
-  Adapted from Arduino BatteryMonitor example
-*/
-
 #include <ArduinoBLE.h>
+#include "BLEProperty.h"
+#include "FlashIAP.h"
 
-BLEService battery("180F");  // User defined service
+BLEService battery("180F");
 
 BLEUnsignedCharCharacteristic batteryLevel("2A19", BLERead | BLENotify);
 BLEDescriptor batteryLevelDescriptor("2901", "Percentage 0 - 100");
 
+mbed::FlashIAP flash;
+
 void setup() {
-  Serial.begin(9600);    // initialize serial communication
+  Serial.begin(9600);
+  // Comment out when running on battery ;)
   while (!Serial);
+  Serial.println("Connected.");
+  if (!flash.init()) {
+    Serial.println("Failed to init flash");
+  }
+  Serial.print("Flash size: ");
+  Serial.println(flash.get_flash_size());
+  Serial.print("Flash page size: ");
+  Serial.println(flash.get_page_size());
+  Serial.print("Flash erased: ");
+  Serial.println(flash.get_erase_value());
+  Serial.print("Application start: ");
+  Serial.println(APPLICATION_ADDR);
+  Serial.print("Application size: ");
+  Serial.println(APPLICATION_SIZE);
+
 
   pinMode(LED_BUILTIN, OUTPUT); // initialize the built-in LED pin
+  digitalWrite(LED_BUILTIN, HIGH);
 
   if (!BLE.begin()) {   // initialize BLE
     Serial.println("starting BLE failed!");
     while (1);
   }
-
   BLE.setLocalName("Nano33BLE");  // Set name for connection
   BLE.setAdvertisedService(battery); // Advertise service
   batteryLevel.addDescriptor(batteryLevelDescriptor);
@@ -107,14 +120,14 @@ void loop() {
     // print the central's BT address:
     Serial.println(central.address());
     // turn on the LED to indicate the connection:
-    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(LED_BUILTIN, LOW);
 
     while (central.connected()) {
       delay(10);
       unsigned long ms = millis();
       if (ms - last_update > 1000) {
         last_update = ms;
-        batteryPercent = (batteryPercent + 24) % 100;
+        batteryPercent = (batteryPercent + 23) % 100;
         batteryLevel.setValue(batteryPercent);
         batteryLevel.broadcast();
         Serial.print("Battery: ");
@@ -123,9 +136,12 @@ void loop() {
     }
 
     // when the central disconnects, turn off the LED:
-    digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(LED_BUILTIN, HIGH);
     Serial.print("Disconnected from central MAC: ");
     Serial.println(central.address());
   }
 }
+#endif  // !ESP32
+
+#ifdef MBED_CONF_ESP8266_PROVIDE_DEFAULT
 #endif
