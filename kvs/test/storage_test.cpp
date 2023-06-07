@@ -2,24 +2,33 @@
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
-#include <Arduino.h>
 #include <string.h>
 #include "storage.hpp"
+
+#ifdef HOST
+SerialIO Serial;
+#else
+#include <Arduino.h>
 #include "storage.cpp"
+#endif
 
 class MockStorage : public Storage {
   public:
+    virtual ~MockStorage() = default;
     bool Init() override {
-      for (int i = 0; i < kSize; i++) {
+      for (uint32_t i = 0; i < kSize; i++) {
         data_[i] = i;
       }
+      SetSectorAndPageSize(4096, 4);
       return true;
     }
 
     int NumBlocksErased() { return erased_blocks_; }
     void Dump() {
+#ifdef HOST
       for (int i = 0; i < 100; i++)
-        Serial.printf("%d:%d(%c) ", i, data_[i], data_[i] > 32 ? data_[i] : '?' );
+        printf("%d:%d(%c) ", i, data_[i], data_[i] > 32 ? data_[i] : '?' );
+#endif
       Serial.println();
     }
 
@@ -28,24 +37,31 @@ class MockStorage : public Storage {
       if (pos + length > kSize) fail();
     }
 
-    void Write(uint32_t pos, const char*buf, uint32_t length) {
+    void CheckAlignment(uint32_t pos, uint32_t length) {
+      if ((pos & (page_size_ - 1)) != 0) abort();
+      if ((length & (page_size_ - 1)) != 0) abort();
+
+    }
+
+    void Write(uint32_t pos, const char*buf, uint32_t length) override {
       BoundsCheck(pos, length);
+      CheckAlignment(pos, length);
       for (uint32_t i = 0; i < length; i++) {
         // Can only reset bits without erasing
         data_[pos + i] &= buf[i];
       }
     }
-    void Read(uint32_t pos, char *buf, uint32_t length) {
+    void Read(uint32_t pos, char *buf, uint32_t length) override {
       BoundsCheck(pos, length);
       // Serial.printf("read %d len %d\n", pos, length);
       bcopy(data_ + pos, buf, length);
     }
-    void Erase(uint32_t pos, uint32_t length) {
+    void Erase(uint32_t pos, uint32_t length) override {
       BoundsCheck(pos, length);
-      for(int i = 0; i < length; i++) {
+      for(uint32_t i = 0; i < length; i++) {
         data_[pos + i] = 0xff;
       }
-      erased_blocks_ += length / kBlockSize;
+      erased_blocks_ += length / sector_size_;
     }
 
    static const uint32_t kSize = 16384;
@@ -56,6 +72,8 @@ class MockStorage : public Storage {
 TEST(StorageTest, Foo) {
   using testing::Eq;
 
+
+  delay(5000);
   Serial.println("Start testing");
 
   // WTF? No unique_ptr
@@ -91,17 +109,27 @@ TEST(StorageTest, Foo) {
   // Check overwrite
   s->Put("foo", "new value");
   EXPECT_THAT(s->Get("foo"), Eq("new value"));
+  EXPECT_THAT(s->Get("bar"), Eq("456"));
 
   Serial.println("End testing");
   s->Dump();
   delete s;
 }
 
+#ifdef HOST
+int main(int, char**) {
+  ::testing::InitGoogleTest();
+
+  // Run tests
+  if (RUN_ALL_TESTS())
+  ;
+}
+#else
 void setup() {
     Serial.begin(115200);
 
     ::testing::InitGoogleTest();
-    ::testing::InitGoogleMock();
+    //::testing::InitGoogleMock();
 
   // Run tests
   if (RUN_ALL_TESTS())
@@ -113,3 +141,4 @@ void loop() {
   // sleep for 1 sec
   delay(1000);
 }
+#endif
