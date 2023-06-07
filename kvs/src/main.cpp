@@ -1,4 +1,3 @@
-#include "BLEProperty.h"
 #ifdef ESP32
 
 #include <Arduino.h>
@@ -58,34 +57,27 @@ void loop() {
 #else
 
 #include <ArduinoBLE.h>
-#include "BLEProperty.h"
 #include "FlashIAP.h"
+#include "BLEProperty.h"
+#include "storage.hpp"
 
 BLEService battery("180F");
 
 BLEUnsignedCharCharacteristic batteryLevel("2A19", BLERead | BLENotify);
 BLEDescriptor batteryLevelDescriptor("2901", "Percentage 0 - 100");
 
-mbed::FlashIAP flash;
+FlashStorage store;
 
 void setup() {
   Serial.begin(9600);
   // Comment out when running on battery ;)
   while (!Serial);
   Serial.println("Connected.");
-  if (!flash.init()) {
-    Serial.println("Failed to init flash");
-  }
-  Serial.print("Flash size: ");
-  Serial.println(flash.get_flash_size());
-  Serial.print("Flash page size: ");
-  Serial.println(flash.get_page_size());
-  Serial.print("Flash erased: ");
-  Serial.println(flash.get_erase_value());
-  Serial.print("Application start: ");
-  Serial.println(APPLICATION_ADDR);
-  Serial.print("Application size: ");
-  Serial.println(APPLICATION_SIZE);
+
+  store.Init();
+  //store.Put("foo", "bar");
+  auto res = store.Get("foo");
+  Serial.println(res.c_str());
 
 
   pinMode(LED_BUILTIN, OUTPUT); // initialize the built-in LED pin

@@ -1,24 +1,20 @@
 #include "storage.hpp"
-#include "Arduino.h"
+#include <memory>
+#include <cstring>
+
+const char* Storage::kMagic = "kvs0";
 
 #ifdef ESP32
+#include "Arduino.h"
 #include "esp_debug_helpers.h"
 #include "nvs_flash.h"
 #include "rom/crc.h"
 
-const char* Storage::kMagic = "kvs";
 
 void fail() {
     printf("Abort.\n");
     esp_backtrace_print(32);
     while (true) sleep(1);
-}
-
- void FlashStorage::BoundsCheck(const char*op, uint32_t pos, uint32_t length) {
-  if (pos > length_ || length > length_ || pos + length > length_) {
-    Serial.printf("Out of bounds %s: %d/%d\n", op, pos, length);
-    fail();
-  }
 }
 
 void FlashStorage::Write(uint32_t pos, const char*buf, uint32_t length) {
@@ -48,7 +44,7 @@ void FlashStorage::Read(uint32_t pos, char*buf, uint32_t length) {
 
 void FlashStorage::Erase(uint32_t pos, uint32_t length) {
   BoundsCheck("erase", pos, length);
-  if ((length & ~(kBlockSize - 1)) != 0 || length == 0) {
+  if ((length & (sector_size_ - 1)) != 0 || length == 0) {
     Serial.printf("Incorrect erase alignment: length=0x%x", length);
     fail();
   }
@@ -89,6 +85,7 @@ bool FlashStorage::Init() {
   }
   start_ = p->address;
   length_ = p->size;
+  SetSectorAndPageSize(4096, 1);
 
   esp_err_t res = esp_flash_init(esp_flash_default_chip);
   if (res != ESP_OK) {
@@ -98,6 +95,105 @@ bool FlashStorage::Init() {
 
   return true;
 }
+#endif  // ESP32
+#ifdef ARDUINO_ARCH_MBED
+
+void fail() {
+    printf("Abort.\n");
+    while (true) delay(1);
+}
+
+#include "ArduinoBLE.h"
+#include "FlashIAP.h"
+
+void FlashStorage::Write(uint32_t pos, const char*buf, uint32_t length) {
+  BoundsCheck("write", pos, length);
+
+  int res = flash_.program(buf, start_ + pos, length);
+  if (res != 0) {
+    Serial.print("Failed to write ");
+    Serial.print(length);
+    Serial.print(" bytes: ");
+    Serial.println(res);
+    fail();
+  }
+}
+
+void FlashStorage::Read(uint32_t pos, char*buf, uint32_t length) {
+  BoundsCheck("read", pos, length);
+
+  int res = flash_.read(buf, start_ + pos, length);
+  if (res == 0) {
+    return;
+  } else {
+    Serial.print("Flash read err: ");
+    Serial.println(res);
+    fail();
+  }
+}
+
+void FlashStorage::Erase(uint32_t pos, uint32_t length) {
+  Serial.print("Erase ");
+  Serial.println(length);
+  BoundsCheck("erase", pos, length);
+  if ((length & (sector_size_ - 1)) != 0 || length == 0) {
+    Serial.println("Incorrect erase alignment");
+    Serial.println(pos);
+    Serial.println(length);
+    Serial.println(sector_size_);
+    fail();
+  }
+
+  int res = flash_.erase(start_ + pos, length);
+  if (res != 0) {
+    Serial.print("Failed to erase, error: ");
+    Serial.println(res);
+    fail();
+  }
+}
+
+bool FlashStorage::Init() {
+  int status = flash_.init();
+  if (status != 0) {
+    Serial.print("Init flash failure: ");
+    Serial.println(status);
+    fail();
+  }
+
+  start_ = 3 * 256 * 1024;
+  length_ = 256 * 1024;
+  SetSectorAndPageSize(flash_.get_sector_size(start_), flash_.get_sector_size(start_));
+  return true;
+}
+
+void bzero(void *buf, size_t length) {
+  char* chars = (char*) buf;
+  for (size_t i = 0; i < length; i++) chars[i] = 0;
+}
+
+#endif  // ARDUINO_ARCH_MBED
+
+void FlashStorage::BoundsCheck(const char *op, uint32_t pos, uint32_t length) {
+    if (pos > length_ || length > length_ || pos + length > length_)
+    {
+    Serial.print("Out of bounds ");
+    Serial.print(op);
+    Serial.print(": pos");
+    Serial.print(pos);
+    Serial.print(" length ");
+    Serial.println(length);
+    fail();
+    }
+}
+
+void Storage::SetSectorAndPageSize(uint32_t sector_sz, uint32_t page_sz) {
+  sector_size_ = sector_sz;
+  page_size_ = page_sz;
+  Serial.print("Sector size: ");
+  Serial.println(sector_size_);
+  buffer_.resize(2 + 254 + page_size_ - 1);
+
+}
 
 Storage::Status Storage::Put(const char* key, const char* value) {
 
@@ -106,71 +202,76 @@ Storage::Status Storage::Put(const char* key, const char* value) {
   uint32_t total_length = key_length + value_length;
 
   if (key_length + value_length > 254) {
-    Serial.printf("Total length too big %d\n", total_length);
+    Serial.print("Total length too big ");
+    Serial.println(total_length);
     return STORAGE_INVALID_ARG;
   }
 
-  char buf[256];
   uint8_t lens[2];
   uint32_t offset = 0;
-  ReadNext(&offset, buf, strlen(kMagic));
+  ReadNext(&offset, buffer_.data(), strlen(kMagic));
 
   // Not initialized, do lazy init
-  if (strncmp(buf, kMagic, strlen(kMagic)) != 0) {
-    Erase(0, kBlockSize);
+  if (strncmp(buffer_.data(), kMagic, strlen(kMagic)) != 0) {
+    int erase_size = strlen(kMagic) + 1;
+    Erase(0, (erase_size + sector_size_ - 1) & ~(sector_size_ - 1));
     Write(0, kMagic, strlen(kMagic));
   } else {
     while (true) {
+      int start = offset;
       ReadNext(&offset, (char*)lens, sizeof(lens));
       // End of log
       if (lens[0] == 255) break;
+      int end = (offset + lens[0] + page_size_ - 1) & ~(page_size_ - 1);
 
       // Key size match, check if old key matches
       if (lens[1] == key_length) {
-        ReadNext(&offset, buf, key_length);
+        ReadNext(&offset, buffer_.data(), key_length);
 
-        if (strncmp(buf, key, key_length) == 0) {
+        if (strncmp(buffer_.data(), key, key_length) == 0) {
           // Wipe old key, value and key length
-          bzero(buf, lens[0] + 1);
-          Write(offset - key_length - 1, buf, lens[0] + 1);
+          bzero(buffer_.data(), end - start);
+          buffer_[0] = lens[0];
+          Write(start, buffer_.data(), end - start);
         }
-        // Skip value
-        offset += lens[0] - lens[1];
-      } else {
-        // Skip key and value
-        offset += lens[0];
       }
+      offset = end;
     }
     // Go back for the header size
     offset -= sizeof(lens);
   }
-  uint32_t end_offset = offset + 2 + total_length;
+  uint32_t end_offset = (offset + 2 + total_length + page_size_ - 1) & ~(page_size_ - 1);
 
-  // First, make sure next flash page is cleared lazily if needed
-  // Keep 256 bytes cleared after the end of the new record.
-  uint32_t old_cleared_page = (offset + 256) / kBlockSize;
-  uint32_t new_cleared_page = (end_offset + 256) / kBlockSize;
-  if (new_cleared_page != old_cleared_page) {
-    Erase(new_cleared_page * kBlockSize, kBlockSize);
+  // Clear lazily. At the start expect that the entire page
+  // containing offset + page_size_ is erased. Make sure end_offset + page_size_
+  // is erased.
+  uint32_t next_page = (offset + page_size_ + sector_size_ - 1) & ~(sector_size_ - 1);
+  uint32_t last_page = (end_offset + page_size_ + sector_size_ - 1) & ~(sector_size_ - 1);
+  if (last_page != next_page) {
+    Erase(next_page, last_page - next_page);
   }
+
+
   // Write total length first. If it fails we just have a bad record.
-  // Serial.printf("Write record %d len %d\n", offset, total_length + 2);
-  Write(offset, (char*)&total_length, 1);
-  Write(offset + 1, (char*)&key_length, 1);
-  Write(offset + 2, key, key_length);
-  Write(offset + 2 + key_length, value, value_length);
+  buffer_[0] = total_length;
+  buffer_[1] = key_length;
+  memcpy(buffer_.data() + 2, key, key_length);
+  memcpy(buffer_.data() + 2 + key_length, value, value_length);
+  uint32_t padded_length = (2 + total_length + page_size_ - 1) & ~(page_size_ - 1);
+  for (uint32_t i = total_length + 2; i < padded_length; i++)
+    buffer_[i] = 0;
+  Write(offset, buffer_.data(), padded_length);
   return STORAGE_OK;
 }
 
 std::string Storage::Get(const char *key) {
-  char buf[256];
   uint8_t lens[2];
 
   uint32_t offset = 0;
-  ReadNext(&offset, buf, strlen(kMagic));
+  ReadNext(&offset, buffer_.data(), strlen(kMagic));
 
   // Not initialized, no result
-  if (strncmp(buf, kMagic, strlen(kMagic)) != 0)
+  if (strncmp(buffer_.data(), kMagic, strlen(kMagic)) != 0)
     return "";
 
   uint32_t key_length = strlen(key);
@@ -178,24 +279,20 @@ std::string Storage::Get(const char *key) {
   while (true) {
     ReadNext(&offset, (char*)lens, sizeof(lens));
     if (lens[0] == 255) return "";
+    uint32_t end = (offset + lens[0] + page_size_ - 1) & ~(page_size_ - 1);
     if (lens[1] < lens[0] && lens[1] == key_length) {
       // Key length match, read key
-      ReadNext(&offset, buf, lens[1]);
-      if (strncmp(buf, key, key_length) == 0) {
+      ReadNext(&offset, buffer_.data(), lens[1]);
+      if (strncmp(buffer_.data(), key, key_length) == 0) {
         // Found match, read value
-        ReadNext(&offset, buf, lens[0] - lens[1]);
-        return std::string(buf, lens[0] - lens[1]);
-      } else {
-        offset += lens[0] - lens[1];
+        ReadNext(&offset, buffer_.data(), lens[0] - lens[1]);
+        return std::string(buffer_.data(), lens[0] - lens[1]);
       }
-    } else {
-      offset += lens[0];
     }
+    offset = end;
   }
 }
 
 std::string Storage::List() const {
     return "Not implemented yet";
 }
-
-#endif

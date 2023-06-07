@@ -2,6 +2,16 @@
 #define __STORAGE_H__
 
 #include <string>
+#include <vector>
+
+#ifdef ARDUINO_ARCH_MBED
+#include "ArduinoBLE.h"
+#include "FlashIAP.h"
+#endif
+
+#ifdef HOST
+#include "host.h"
+#endif
 
 void fail();
 
@@ -18,10 +28,10 @@ class Storage {
     std::string Get(const char* key);
     std::string List() const;
 
-    static const uint32_t kBlockSize = 4096;
     static const char* kMagic;
 
   protected:
+    void SetSectorAndPageSize(uint32_t sector_sz, uint32_t page_sz);
     virtual void Write(uint32_t pos, const char*buf, uint32_t length) = 0;
     virtual void Read(uint32_t pos, char* buf, uint32_t length) = 0;
     virtual void Erase(uint32_t pos, uint32_t size) = 0;
@@ -30,6 +40,10 @@ class Storage {
         Read(*pos, buf, length);
         *pos += length;
     }
+
+    uint32_t sector_size_;
+    uint32_t page_size_;
+    std::vector<char> buffer_;
 };
 
 class FlashStorage : public Storage {
@@ -46,6 +60,9 @@ class FlashStorage : public Storage {
     // Data partition
     uint32_t start_ = ~0;
     uint32_t length_ = ~0;
+#ifdef ARDUINO_ARCH_MBED
+    mbed::FlashIAP flash_;
+#endif
 };
 
 #endif  // __STORAGE_H__
