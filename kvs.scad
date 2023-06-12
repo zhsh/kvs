@@ -1,7 +1,8 @@
-fn = 100;
-fs = 0.6;
+fn = 0;
+fs = 0.4;
 eps = 0.01;
 w = 1.2;
+round_corners = false;
 
 nano_length = 44 + 0.5;
 nano_width = 17.7 + 0.5;
@@ -221,7 +222,13 @@ module box2(off) {
   }
 }
 
-module box(off) { box2(off); }
+module box(off) { 
+  if (round_corners) {
+    box2(off);
+  } else {
+    simple_box(off);
+  }
+}
 
 module bottom_screw_offset(off = 0) {
   origin(hole_from_edge_y, hole_from_edge_x, -off) children();
@@ -267,7 +274,7 @@ module top_plain() {
 }
 
 // Divisor slope calculation
-z0 = box_height / 2;
+z0 = box_height / 2 - 1.3 * w;
 z1 = -box_height / 2 + battery_only_height_nc / 2;
 
 module plain_transform(off = 0) {
@@ -307,79 +314,104 @@ module lock_transform() {
 triangle_sz = 2.6;
 
 pin_length = 3;
-pin_up_length = 3;
-pin_spacing_length = 2.5;
-pin_stride = pin_length + pin_up_length + 2 * pin_spacing_length;
+pin_triangle_length = 5;
+pin_stride = pin_length + pin_triangle_length;
 base_clearance = 0.2;
-padding_in = 3;
-num_pins = floor((box_length - pin_length - 2 * padding_in) / pin_stride);
-padding = (box_length - (pin_stride * num_pins + pin_length)) / 2;
+padding_in = 5;
+num_pins = floor((box_length - pin_triangle_length - 2 * padding_in) / pin_stride);
+padding = (box_length - (pin_stride * num_pins + pin_triangle_length)) / 2;
 clearance_y = base_clearance;
 
-module triangle() {
-  translate([padding, clearance_y, 0])
+module triangle(len) {
   rotate(90, [0,1,0])
-    linear_extrude(box_length - padding * 2)
+    linear_extrude(len)
     polygon([[0,0],[-triangle_sz, 0],[0, triangle_sz]]);
 }
 
-// lock_transform() 
-
+module triangle_base() {
+  translate([padding, clearance_y, 0]) triangle(box_length - padding * 2);
+}
 
 module zipper(clearance) {
-
-  for (x = [0 : num_pins]) {
-    translate([padding + pin_stride * x - clearance / 2,
-               -w - clearance_y - eps,
-               triangle_sz - w - clearance / 2])
-      cube([pin_length + clearance, w + 2 * clearance_y + 2 * eps, w + clearance]);
-  }
-
   translate([padding, clearance_y, -w])
   cube([box_length - padding * 2, triangle_sz, w]);
 
   for (x = [0 : num_pins - 1]) {
-    translate([padding + pin_length + pin_spacing_length + pin_stride * x - clearance / 2,
+    translate([padding + pin_triangle_length + pin_stride * x - clearance / 2,
                -w - eps - clearance_y,
                -w - eps - clearance / 2])
       cube([pin_length + clearance,
             w + 2 * clearance_y + 2 * eps,
             w + clearance + eps]);
   }
-
 }
 
-//lock_transform() {
-// triangle();
+module zipper2(clearance) {
+  color("green")
+    for (x = [0 : num_pins]) {
+      translate([padding + pin_stride * x + base_clearance / 2 - clearance / 2,
+          -w - eps + clearance,
+          -w - eps - clearance / 2])
+        triangle(pin_stride - pin_length - base_clearance + clearance);
+    }
+}
+
+// lock_transform()
+//{
+//  difference() {
+//    union() {
+//      triangle_base();
+//      color("red") zipper(0);
+//    };
+//    zipper2(0.2);
+//  }
 //
-//  color("red")
-//    zipper(0);
-//
+//  color("blue")
 //  difference() {
 //    translate([0,-w,-w]) cube([box_length, w, w + triangle_sz]);
-//    zipper(0.5);
+//    zipper(0.2);
 //  }
+//
+//  color("green") zipper2(0);
 //}
 
 
 module bottom() {
   difference() {
     // Shell
-    box(w);
+    box(0.4);
 
     // Shell subtractions
     box(eps);
     plain_transform(-0.1) top_plain();
+
+
     cord();
     dupX() screw_sub();
     lock_transform() zipper(base_clearance);
   }
 
-  lock_transform() 
   difference() {
-    translate([padding,-w,-w])
-      cube([box_length - padding * 2, w, w]);
-    zipper(base_clearance);
+    // Shell
+    box(w);
+
+    // Shell subtractions
+    box(0.4 + eps);
+    plain_transform(w -0.1) top_plain();
+
+
+    cord();
+    dupX() screw_sub();
+    lock_transform() zipper(base_clearance);
+  }
+
+  lock_transform() {
+    difference() {
+      translate([padding + base_clearance,-w,-w])
+        cube([box_length - padding * 2 - 2 * base_clearance, w, w]);
+      zipper(base_clearance);
+    }
+    zipper2(0);
   }
 
   dupX() screw_support();
@@ -455,37 +487,49 @@ module button_cap_final() {
 }
 
 module top() {
-  intersection() {
-    plain_transform(0.1) top_plain();
-    difference() {
-      // Shell
-      box(w);
-
-      // Shell subtractions
-      box(eps);
-      lock_transform() translate([padding - base_clearance/2,-w - eps,-w - eps])
-        cube([box_length - padding * 2 + base_clearance,
-              w + clearance_y + 2 * eps,
-              w + triangle_sz + 2 * eps]);
-
+  difference() {
+    // Shell
+    union() {
       intersection() {
-        button_transform(-eps) button_cap(0, nano_usb_height - nano_height + w, 0);
-        simple_box_verbose(w+eps, 0, w+eps);
+        box(0.4);
+        plain_transform(0.1) top_plain();
       }
-
-      d = 2.5;
-      mirrorY() origin() translate([d/2 + 1, 2.5, 0]) cylinder(d=d, h=20, $fn=30);
-      mirrorY() origin() translate([d/2 + 1, nano_width - 2.5, 0]) cylinder(d=d, h=20, $fn=30);
+      intersection() {
+        box(w);
+        plain_transform(w + 0.1) top_plain();
+      }
     }
+
+    // Shell subtractions
+    box(eps);
+    lock_transform() translate([padding,-w - eps,-w - eps])
+      cube([box_length - padding * 2,
+          w + clearance_y + 2 * eps,
+          w + triangle_sz + 2 * eps]);
+
+    intersection() {
+      button_transform(-eps) button_cap(0, nano_usb_height - nano_height + w, 0);
+      simple_box_verbose(w+eps, 0, w+eps);
+    }
+
+    d = 2.5;
+    mirrorY() origin() translate([d/2 + 1.6, 3.05, 0]) cylinder(d=d, h=20, $fn=30);
+    mirrorY() origin() translate([d/2 + 1, nano_width - 4.5, 0]) cylinder(d=d, h=20, $fn=30);
+    lock_transform() zipper2(base_clearance);
   }
 
   screw_top(nano_usb_height);
   mirrorX() screw_top(box_height - screw_bottom_height - 0.2);
 
   lock_transform() { 
-    triangle();
-    color("red")
-    zipper(0);
+    difference() {
+      union() {
+        triangle_base();
+        color("red")
+          zipper(0);
+      }
+     zipper2(base_clearance);
+    }
   }
 
   intersection() {
@@ -498,9 +542,9 @@ module top() {
   }
 }
 
-// bottom();
+bottom();
 // top();
-button_cap_final();
+// button_cap_final();
 
 // legacy_origin() components();
 
