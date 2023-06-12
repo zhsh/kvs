@@ -376,14 +376,17 @@ module zipper2(clearance) {
 //}
 
 
+// Case clearance. Extra clearance for the case double wall inner (thiner) part.
+cc = 0.1;
+
 module bottom() {
   difference() {
     // Shell
-    box(0.4);
+    box(0.4 + cc + eps);
 
     // Shell subtractions
-    box(eps);
-    plain_transform(-0.1) top_plain();
+    box(eps - cc);
+    plain_transform(-0.1 - cc) top_plain();
 
 
     cord();
@@ -396,7 +399,7 @@ module bottom() {
     box(w);
 
     // Shell subtractions
-    box(0.4 + eps);
+    box(0.4 + cc);
     plain_transform(w -0.1) top_plain();
 
 
@@ -417,7 +420,7 @@ module bottom() {
   dupX() screw_support();
 
   intersection() {
-    box(0);
+    box(-cc);
 
     // Additions restricted to internal space
     union() {
