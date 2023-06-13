@@ -1,8 +1,8 @@
 fn = 0;
 fs = 0.4;
-eps = 0.01;
+eps = 0.001;
 w = 1.2;
-round_corners = false;
+round_corners = true;
 
 nano_length = 44 + 0.5;
 nano_width = 17.7 + 0.5;
