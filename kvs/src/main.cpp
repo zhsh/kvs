@@ -56,17 +56,30 @@ void loop() {
 }
 #else
 
+#include <string>
 #include <ArduinoBLE.h>
 #include "FlashIAP.h"
 #include "BLEProperty.h"
 #include "storage.hpp"
+#include "enc.hpp"
 
 BLEService battery("180F");
-
 BLEUnsignedCharCharacteristic batteryLevel("2A19", BLERead | BLENotify);
-BLEDescriptor batteryLevelDescriptor("2901", "Percentage 0 - 100");
+BLEDescriptor batteryLevelDescriptor("2A19", "Percentage 0 - 100");
+
+// random 128bit uuid
+BLEService challengeService("DFe8CFA50FFA08E336DE0F884944750F");
+BLECharacteristic challengeChar("DFe8CFA50FFA08E336DE0F8849447510", 
+  BLERead | BLENotify | BLEWrite, /*value_length=*/sizeof(EncMessage::data), /*fixed_length*/true);
+BLEDescriptor challengeDesc("2A19", "Blah-blah");
 
 FlashStorage store;
+
+void challengeHandler(BLEDevice device, BLECharacteristic characteristic) {
+  EncMessage reply;
+  challengeReply((EncMessage *) characteristic.value(), &reply);
+  characteristic.setValue(reply.data, sizeof(reply.data));
+}
 
 void setup() {
   Serial.begin(9600);
@@ -94,7 +107,15 @@ void setup() {
   battery.addCharacteristic(batteryLevel); // Add characteristic to service
   BLE.addService(battery); // Add service
 
-  BLE.advertise();  // Start advertising
+  BLE.setAdvertisedService(challengeService);
+  // challengeChar.addDescriptor(challengeDesc);
+  challengeChar.setValue("foobar");
+  challengeChar.setEventHandler(BLEWritten, &challengeHandler);
+  challengeService.addCharacteristic(challengeChar);
+  BLE.addService(challengeService);
+
+
+  BLE.advertise(); // Start advertising
   Serial.print("Peripheral device MAC: ");
   Serial.println(BLE.address());
   Serial.println("Waiting for connections...");
