@@ -23,9 +23,6 @@ void mult(const uint8_t* n1 /* size=BITS */, const uint8_t* n2 /* size=BITS */, 
         }
         int carry = 0;
         for (int i = 0; i < BITS; ++i) {
-            if (2*BITS-1-b-i == 97) {
-                int stop = 1;
-            }
             int new_val = out[2*BITS-1-b-i] + n1[BITS-1-i] + carry;
             out[2*BITS-1-b-i] = new_val % 2;
             carry = new_val / 2;
@@ -106,7 +103,7 @@ void RSADecryptor::Decrypt(const uint8_t *in /* size=BITS */, uint8_t *out /* si
     }
     out[BITS-1] = 1;
 
-    for (int i = 0; i < d_bits_inverse.length(); ++i) {
+    for (unsigned int i = 0; i < d_bits_inverse.length(); ++i) {
         if (d_bits_inverse[i] == '1') {
             mult_modulo(out, base_);
         }
