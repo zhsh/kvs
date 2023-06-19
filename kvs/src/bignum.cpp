@@ -156,16 +156,23 @@ BigInt BigInt::operator-(const BigInt& other) const {
 }
 
 BigInt shift(const BigInt& in, uint32_t num) {
+  BigInt res;
   uint32_t full = num / 32;
   uint32_t partial = num % 32;
-  uint32_t opposite = 32 - partial;
-  BigInt res;
-  res.digits.resize(full + 1 + in.digits.size());
-  uint32_t carry = 0;
-  for (size_t i = 0; i < in.digits.size(); i++) {
-    uint32_t v = in.digits[i];
-    res.digits[full + i] = (v << partial) | carry;
-    carry = v >> opposite;
+  if (partial == 0) {
+    res.digits.resize(full + in.digits.size());
+    for (size_t i = 0; i < in.digits.size(); i++) {
+      res.digits[full + i] = in.digits[i];
+    }
+  } else {
+    uint32_t opposite = 32 - partial;
+    res.digits.resize(full + 1 + in.digits.size());
+    uint32_t carry = 0;
+    for (size_t i = 0; i < in.digits.size(); i++) {
+      uint32_t v = in.digits[i];
+      res.digits[full + i] = (v << partial) | carry;
+      carry = v >> opposite;
+    }
   }
   while (res.digits.back() == 0) res.digits.pop_back();
   return res;
@@ -211,8 +218,65 @@ BigInt modulo(const BigInt& a, const BigInt& b) {
   return res;
 }
 
+uint32_t top32(const BigInt& v, uint32_t msb) {
+  int offset = msb - 31;
+  int bword = offset / 32;
+  int bshift = offset % 32;
+  int compliment = 32 - bshift;
+  return v.digits[bword+1] << compliment | v.digits[bword] >> bshift;
+}
+
+uint64_t top64(const BigInt& v, uint32_t msb) {
+  int offset = msb - 31;
+  int bword = offset / 32;
+  int bshift = offset % 32;
+  int compliment = 32 - bshift;
+  return ((uint64_t) v.digits[bword+1]) << (compliment + 32)
+       | ((uint64_t)v.digits[bword]) << compliment
+       | v.digits[bword-1] >> bshift;
+}
+
+BigInt modulo2(const BigInt& a, const BigInt& b) {
+  int b_msb = b.msb();
+
+  // The algorithm below only works for large b.
+  if (b_msb < 32) return modulo(a, b);
+
+  // Use 31 bits as +1 can potentially overflow?
+  uint32_t b_top = top32(b, b_msb + 1) + 1;
+
+  BigInt res = a;
+  int msb;
+
+  while (true) {
+    msb = res.msb();
+    if (msb - b_msb < 32) break;
+
+    // 2 zeros at msb
+    uint64_t top = top64(res, msb + 2);
+    BigInt mul;
+    mul.digits.push_back(top / b_top);
+
+    BigInt subtrahend = (mul * b).shift(msb - b_msb - 31);
+    res = res - subtrahend;
+  }
+
+  // fallback to per-bit shifts
+  int max_shift = msb - b_msb;
+
+  for (int shift = max_shift; shift >= 0; shift--) {
+    auto bshifted = b.shift(shift);
+
+    if (res > bshifted) {
+      res = res - bshifted;
+    }
+  }
+
+  return res;
+}
+
 BigInt BigInt::operator%(const BigInt& other) const {
-  return modulo(*this, other);
+  return modulo2(*this, other);
 }
 
 int main(int argc, char **argv) {
@@ -224,6 +288,11 @@ int main(int argc, char **argv) {
     assert(a + b == BigInt::hex("5cc09495124ff2052a89ee0d438b4a53"));
     assert(a - b == BigInt::hex("5cab9014e30d80b43e98325b1cee8d67"));
     assert(a % b == BigInt::hex("539048ea8fb7c277c4b87e6ffbf11"));
+    assert(top32(b, b.msb()) == 0xa824017a);
+    assert(top64(b, b.msb()) == 0xa824017a138a875f);
+    assert(top32(a, a.msb()) == 0xb96c24a9);
+    assert(top32(a, a.msb() + 1) == 0x5cb61254);
+    assert(top64(a, a.msb()) == 0xb96c24a9f55d72b9);
   }
 
   {
@@ -240,6 +309,7 @@ int main(int argc, char **argv) {
     assert(v0 - v1 == BigInt::hex("bfffffffffffffffffff8"));
     assert((v0 - v1) + v1 + v1 == BigInt::hex("c00000000000000000008"));
   }
+
+  assert(BigInt::hex("2542352412354554635652352234432545634") % BigInt::hex("34324123434345345") == BigInt::hex("c81a554d5702408c"));
   printf("Tests passed\n");
 }
-
