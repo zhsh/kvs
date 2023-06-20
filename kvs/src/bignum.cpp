@@ -10,6 +10,7 @@ struct BigInt {
   BigInt() = default;
   static BigInt bin(const std::string_view str);
   static BigInt hex(const std::string_view str);
+  static BigInt fromUint32(uint32_t v);
 
   std::vector<uint32_t> digits;
 
@@ -18,14 +19,24 @@ struct BigInt {
   BigInt operator+(const BigInt& other) const;
   BigInt operator-(const BigInt& other) const;
   bool operator==(const BigInt& other) const;
+  bool operator!=(const BigInt& other) const;
   bool operator<(const BigInt& other) const;
   bool operator>(const BigInt& other) const;
   BigInt operator%(const BigInt& other) const;
+  BigInt& operator+=(const BigInt& other);
+  BigInt& operator-=(const BigInt& other);
+  BigInt& operator%=(const BigInt& other);
   BigInt shift(uint32_t num) const;
 
   // Most significant bit
   uint32_t msb() const;
 };
+
+BigInt BigInt::fromUint32(uint32_t v) {
+  BigInt res;
+  res.digits.push_back(v);
+  return res;
+}
 
 BigInt BigInt::bin(const std::string_view str) {
   BigInt res;
@@ -75,7 +86,7 @@ BigInt BigInt::hex(const std::string_view str) {
 void BigInt::print() const {
     printf("\"");
     bool first = true;
-    for (int i = digits.size() - 1; i >= 0; i--) {
+    for (ssize_t i = digits.size() - 1; i >= 0; i--) {
       if (first && digits[i] == 0) continue;
       printf(first ? "%x" : "%08x", digits[i]);
       first = false;
@@ -83,13 +94,12 @@ void BigInt::print() const {
     printf("\"\n");
 }
 
-BigInt mul(const BigInt& a, const BigInt& b) {
-  BigInt result;
+void mul(const BigInt& a, const BigInt& b, BigInt& result) {
   result.digits.resize(a.digits.size() + b.digits.size());
 
-  for (int i = 0; i < a.digits.size(); i++) {
+  for (size_t i = 0; i < a.digits.size(); i++) {
     uint32_t carry = 0;
-    for (int j = 0; j < b.digits.size(); j++) {
+    for (size_t j = 0; j < b.digits.size(); j++) {
       uint32_t m1 = a.digits[i];
       uint32_t m2 = b.digits[j];
       uint64_t product = (uint64_t)(m1) * m2 + carry + result.digits[i + j];
@@ -99,20 +109,20 @@ BigInt mul(const BigInt& a, const BigInt& b) {
     result.digits[i + b.digits.size()] = carry;
   }
   while (result.digits.back() == 0) result.digits.pop_back();
-  return result;
 }
 
 BigInt BigInt::operator*(const BigInt& other) const {
-  return mul(*this, other);
+  BigInt result;
+  mul(*this, other, result);
+  return result;
 }
 
 int cmp(const BigInt& a, const BigInt& b) {
-  BigInt result;
   int len_min = std::min(a.digits.size(), b.digits.size());
-  for (int i = len_min; i < a.digits.size(); i++) {
+  for (size_t i = len_min; i < a.digits.size(); i++) {
     if (a.digits[i] != 0) return 1;
   }
-  for (int i = len_min; i < b.digits.size(); i++) {
+  for (size_t i = len_min; i < b.digits.size(); i++) {
     if (b.digits[i] != 0) return -1;
   }
   for (int i = len_min - 1; i >= 0; --i) {
@@ -125,6 +135,10 @@ bool BigInt::operator==(const BigInt& other) const {
   return cmp(*this, other) == 0;
 }
 
+bool BigInt::operator!=(const BigInt& other) const {
+  return cmp(*this, other) != 0;
+}
+
 bool BigInt::operator<(const BigInt& other) const {
   return cmp(*this, other) == -1;
 }
@@ -133,49 +147,76 @@ bool BigInt::operator>(const BigInt& other) const {
   return cmp(*this, other) == 1;
 }
 
-BigInt add(const BigInt& a, const BigInt& b) {
-  BigInt result;
-  result.digits.resize(std::max(a.digits.size(), b.digits.size()));
+void add_inplace(BigInt& a, const BigInt& b) {
+  if (a.digits.size() < b.digits.size()) {
+    a.digits.resize(b.digits.size());
+  }
 
   uint32_t carry = 0;
-  for (int i = 0; i < result.digits.size(); i++) {
-    uint32_t v1 = i < a.digits.size() ? a.digits[i] : 0;
-    uint32_t v2 = i < b.digits.size() ? b.digits[i] : 0;
-    uint64_t sum = (uint64_t)(v1) + v2 + carry;
-    result.digits[i] = sum;
+  for (size_t i = 0; i < b.digits.size(); i++) {
+    uint64_t v1 = a.digits[i];
+    uint64_t v2 = b.digits[i];
+    uint64_t sum = v1 + v2 + carry;
+    a.digits[i] = sum;
     carry = sum >> 32;
   }
-  if (carry) result.digits.push_back(carry);
-  return result;
+  for (size_t i = b.digits.size(); carry && i < a.digits.size(); i++) {
+    uint64_t v1 = a.digits[i];
+    uint64_t sum = v1 + carry;
+    a.digits[i] = sum;
+    carry = sum >> 32;
+  }
+  if (carry) a.digits.push_back(carry);
 }
 
 BigInt BigInt::operator+(const BigInt& other) const {
-  return add(*this, other);
+  BigInt result = *this;
+  add_inplace(result, other);
+  return result;
 }
 
-BigInt sub(const BigInt& a, const BigInt& b) {
-  BigInt result;
-  result.digits.resize(std::max(a.digits.size(), b.digits.size()));
+BigInt& BigInt::operator+=(const BigInt& other) {
+  add_inplace(*this, other);
+  return *this;
+}
+
+void sub_inplace(BigInt& a, const BigInt& b) {
+  assert(a.digits.size() >= b.digits.size());
 
   // Sign extended carry
   int64_t carry = 0;
 
-  for (int i = 0; i < result.digits.size(); i++) {
-    uint32_t v1 = a.digits[i];
-    uint32_t v2 = i < b.digits.size() ? b.digits[i] : 0;
-    uint64_t sum = (uint64_t)(v1) - v2 + carry;
-    result.digits[i] = sum;
-    carry = sum;
+  for (size_t i = 0; i < b.digits.size(); i++) {
+    uint64_t v1 = a.digits[i];
+    uint64_t v2 = b.digits[i];
+    uint64_t res = (uint64_t)(v1) - v2 + carry;
+    a.digits[i] = res;
+    carry = res;
+    // Sign extend carry;
+    carry >>= 32;
+  }
+
+  for (size_t i = b.digits.size(); carry && i < a.digits.size(); i++) {
+    uint64_t v1 = a.digits[i];
+    uint64_t res = v1 + carry;
+    a.digits[i] = res;
+    carry = res;
     // Sign extend carry;
     carry >>= 32;
   }
   assert(carry == 0);
-  while (result.digits.back() == 0) result.digits.pop_back();
-  return result;
+  while (a.digits.back() == 0) a.digits.pop_back();
 }
 
 BigInt BigInt::operator-(const BigInt& other) const {
-  return sub(*this, other);
+  BigInt result = *this;
+  sub_inplace(result, other);
+  return result;
+}
+
+BigInt& BigInt::operator-=(const BigInt& other) {
+  sub_inplace(*this, other);
+  return *this;
 }
 
 BigInt shift(const BigInt& in, uint32_t num) {
@@ -196,6 +237,7 @@ BigInt shift(const BigInt& in, uint32_t num) {
       res.digits[full + i] = (v << partial) | carry;
       carry = v >> opposite;
     }
+    res.digits[full + in.digits.size()] = carry;
   }
   while (res.digits.back() == 0) res.digits.pop_back();
   return res;
@@ -206,7 +248,7 @@ BigInt BigInt::shift(uint32_t num) const {
 }
 
 uint32_t msb(const BigInt& v) {
-  for (int i = v.digits.size() - 1; i >= 0; i--) {
+  for (ssize_t i = v.digits.size() - 1; i >= 0; i--) {
     uint32_t mask = 0x80000000;
     uint32_t pos = 31;
     do {
@@ -225,25 +267,24 @@ uint32_t BigInt::msb() const {
 }
 
 
-BigInt modulo(const BigInt& a, const BigInt& b) {
-  BigInt res = a;
+void modulo(BigInt& a, const BigInt& b) {
   int a_msb = a.msb();
   int b_msb = b.msb();
   int max_shift = a_msb - b_msb;
 
   for (int shift = max_shift; shift >= 0; shift--) {
+    // TODO: get rid of allocation
     auto bshifted = b.shift(shift);
 
-    if (res > bshifted) {
-      res = res - bshifted;
+    if (a > bshifted) {
+      a -= bshifted;
     }
   }
-  return res;
 }
 
 uint32_t top32(const BigInt& v, uint32_t msb) {
   int offset = msb - 31;
-  int bword = offset / 32;
+  size_t bword = offset / 32;
   int bshift = offset % 32;
   int compliment = 32 - bshift;
   uint32_t w0 = bword + 1 < v.digits.size() ? v.digits[bword+1] : 0;
@@ -253,7 +294,7 @@ uint32_t top32(const BigInt& v, uint32_t msb) {
 
 uint64_t top64(const BigInt& v, uint32_t msb) {
   int offset = msb - 31;
-  int bword = offset / 32;
+  size_t bword = offset / 32;
   int bshift = offset % 32;
   int compliment = 32 - bshift;
   uint64_t w0 = bword + 1 < v.digits.size() ? v.digits[bword+1] : 0;
@@ -262,50 +303,132 @@ uint64_t top64(const BigInt& v, uint32_t msb) {
   return w0 << (compliment + 32) | w1 << compliment | w2 >> bshift;
 }
 
-BigInt modulo2(const BigInt& a, const BigInt& b) {
+void modulo2(BigInt& a, const BigInt& b) {
   int b_msb = b.msb();
 
   // The algorithm below only works for large b.
-  if (b_msb < 32) return modulo(a, b);
+  if (b_msb < 32) { modulo(a, b); return; }
 
   // Use 31 bits as +1 can potentially overflow?
   uint32_t b_top = top32(b, b_msb + 1) + 1;
 
-  BigInt res = a;
   int msb;
 
   while (true) {
-    msb = res.msb();
+    msb = a.msb();
     if (msb - b_msb < 32) break;
 
     // 2 zeros at msb
-    uint64_t top = top64(res, msb + 2);
+    uint64_t top = top64(a, msb + 2);
     BigInt mul;
     mul.digits.push_back(top / b_top);
 
+    // TODO: get rid of shift copy
     BigInt subtrahend = (mul * b).shift(msb - b_msb - 31);
-    res = res - subtrahend;
+    a -= subtrahend;
   }
 
   // fallback to per-bit shifts
   int max_shift = msb - b_msb;
 
-  for (int shift = max_shift; shift >= 0; shift--) {
+  for (ssize_t shift = max_shift; shift >= 0; shift--) {
     auto bshifted = b.shift(shift);
 
-    if (res > bshifted) {
-      res = res - bshifted;
+    if (a > bshifted) {
+      a -= bshifted;
     }
   }
-
-  return res;
 }
 
+void pow(const BigInt& in, const BigInt& d, const BigInt& mod, BigInt& out) {
+  out.digits.clear();
+  out.digits.push_back(1);
+
+  BigInt tmp;
+  BigInt v = in;
+  uint32_t msb = d.msb();
+  uint32_t mask = 1;
+  uint32_t idx = 0;
+
+  for (uint32_t i = 0; i <= msb; i++) {
+    if ((d.digits[idx] & mask) != 0) {
+      tmp = out * v;
+      tmp %= mod;
+      std::swap(out, tmp);
+    }
+
+    tmp = v * v;
+    tmp %= mod;
+    std::swap(v, tmp);
+
+    mask <<= 1;
+    if (mask == 0) {
+      mask = 1;
+      idx++;
+    }
+  }
+}
+
+
 BigInt BigInt::operator%(const BigInt& other) const {
-  return modulo2(*this, other);
+  BigInt result = *this;
+  modulo2(result, other);
+  return result;
+}
+
+BigInt& BigInt::operator%=(const BigInt& other) {
+  modulo2(*this, other);
+  return *this;
 }
 
 int main(int argc, char **argv) {
+  const BigInt zero = BigInt::fromUint32(0);
+  const BigInt one = BigInt::fromUint32(1);
+  const BigInt f_16 = BigInt::hex("FFFFFFFFFFFFFFFF");
+  const BigInt v64bit = BigInt::hex("10000000000000000");
+  const BigInt v64bit_and_one = BigInt::hex("10000000000000001");
+  {
+    // Mul
+    assert((one * one).digits.size() == 1);
+  }
+  {
+    // Cmp
+    assert(cmp(BigInt::hex("FFFFFFFF0000000000000000"), one) == 1);
+    assert(cmp(one, BigInt::hex("FFFFFFFF0000000000000000")) == -1);
+  }
+  {
+    // Add
+    assert(f_16 + one + one == v64bit_and_one);
+  }
+  {
+    // Add inplace
+    assert(((BigInt(f_16) += one) += one) == v64bit_and_one);
+    assert((BigInt(one) += f_16) == v64bit);
+  }
+  {
+    // Sub
+    assert(v64bit_and_one - one - one == f_16);
+  }
+  {
+    // Sub inplace
+    assert(((BigInt(v64bit_and_one) -= one) -= one) == f_16);
+  }
+  {
+    // Shift
+    const auto v = BigInt::hex("12345678");
+    assert(BigInt(v).shift(0) == v);
+    assert(BigInt(v).shift(4) == BigInt::hex("123456780"));
+    assert(BigInt(v).shift(32) == BigInt::hex("1234567800000000"));
+    assert(BigInt::bin("10101").shift(1) == BigInt::bin("101010"));
+    assert(BigInt::bin("10101").shift(1).digits.size() == 1);
+  }
+  {
+    // msb
+    assert(zero.msb() == 0);  // kinda odd
+    assert(one.msb() == 0);
+    assert(f_16.msb() == 63);
+    assert(v64bit.msb() == 64);
+  }
   {
     auto a = BigInt::hex("5cb61254faaeb95cb4911034303cebdd");
     auto b = BigInt::hex("a824017a138a875f8ddd9134e5e76");
@@ -314,6 +437,15 @@ int main(int argc, char **argv) {
     assert(a + b == BigInt::hex("5cc09495124ff2052a89ee0d438b4a53"));
     assert(a - b == BigInt::hex("5cab9014e30d80b43e98325b1cee8d67"));
     assert(a % b == BigInt::hex("539048ea8fb7c277c4b87e6ffbf11"));
+
+    auto c = a;
+    c += b;
+    assert(c == a + b);
+
+    c = a;
+    c -= b;
+    assert(c == a - b);
+
     assert(top32(b, b.msb()) == 0xa824017a);
     assert(top64(b, b.msb()) == 0xa824017a138a875f);
     assert(top64(b, b.msb() + 63) == 1);
@@ -332,15 +464,36 @@ int main(int argc, char **argv) {
 
   {
     auto v0 = BigInt::hex("c00000000000000000000");
-    auto v1 = BigInt::hex("8");
+    auto v1 = BigInt::fromUint32(8);
     assert(v0 + v1 > v0);
     assert(v0 - v1 == BigInt::hex("bfffffffffffffffffff8"));
     assert((v0 - v1) + v1 + v1 == BigInt::hex("c00000000000000000008"));
+    auto v = v0;
+    v -= v1;
+    v += v1;
+    v += v1;
+    assert((v0 - v1) + v1 + v1 == v);
   }
 
-  assert(BigInt::hex("2542352412354554635652352234432545634")
-      % BigInt::hex("34324123434345345") == BigInt::hex("c81a554d5702408c"));
+  {
+    // Modulo
+    assert(BigInt::hex("2542352412354554635652352234432545634")
+        % BigInt::hex("34324123434345345") == BigInt::hex("c81a554d5702408c"));
 
-  assert(BigInt::hex("F0F0F0F0F") == BigInt::bin("111100001111000011110000111100001111"));
+    assert(BigInt::hex("F0F0F0F0F") == BigInt::bin("111100001111000011110000111100001111"));
+  }
+
+  {
+    // Pow
+    const auto d = BigInt::hex("2f92cf6ccda9205e17a1d45e2351c4fd");
+    const auto n = BigInt::hex("8932aba75549986ced8038695dfe89b5");
+    const auto in = BigInt::fromUint32(2);
+    BigInt enc;
+    pow(in, BigInt::fromUint32(65537), n, enc);
+    assert(enc == BigInt::hex("107f6020d4697f2598701df630ec0751"));
+    BigInt out;
+    pow(enc, d, n, out);
+    assert(out == in);
+  }
   printf("Tests passed\n");
 }
