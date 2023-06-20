@@ -8,6 +8,7 @@
 
 struct BigInt {
   BigInt() = default;
+  static BigInt bin(const std::string_view str);
   static BigInt hex(const std::string_view str);
 
   std::vector<uint32_t> digits;
@@ -25,6 +26,28 @@ struct BigInt {
   // Most significant bit
   uint32_t msb() const;
 };
+
+BigInt BigInt::bin(const std::string_view str) {
+  BigInt res;
+  for (int i = str.size(); i >= 0; i-=32) {
+
+    uint32_t v = 0;
+    for (int j = std::max(i - 32, 0); j < i; j++) {
+      char c = str[j];
+      int digit;
+      if (c == '0' ) digit = 0;
+      else if (c == '1') digit = 1;
+      else {
+        std::string copy = std::string(str);
+        printf("Wrong char %c in %.*s\n", c, (int)str.length(), str.data());
+        abort();
+      }
+      v = (v << 1) + digit;
+    }
+    res.digits.push_back(v);
+  }
+  return res;
+}
 
 BigInt BigInt::hex(const std::string_view str) {
   BigInt res;
@@ -223,7 +246,9 @@ uint32_t top32(const BigInt& v, uint32_t msb) {
   int bword = offset / 32;
   int bshift = offset % 32;
   int compliment = 32 - bshift;
-  return v.digits[bword+1] << compliment | v.digits[bword] >> bshift;
+  uint32_t w0 = bword + 1 < v.digits.size() ? v.digits[bword+1] : 0;
+  uint32_t w1 = v.digits[bword];
+  return w0 << compliment | w1 >> bshift;
 }
 
 uint64_t top64(const BigInt& v, uint32_t msb) {
@@ -231,9 +256,10 @@ uint64_t top64(const BigInt& v, uint32_t msb) {
   int bword = offset / 32;
   int bshift = offset % 32;
   int compliment = 32 - bshift;
-  return ((uint64_t) v.digits[bword+1]) << (compliment + 32)
-       | ((uint64_t)v.digits[bword]) << compliment
-       | v.digits[bword-1] >> bshift;
+  uint64_t w0 = bword + 1 < v.digits.size() ? v.digits[bword+1] : 0;
+  uint64_t w1 = v.digits[bword+0];
+  uint64_t w2 = v.digits[bword-1];
+  return w0 << (compliment + 32) | w1 << compliment | w2 >> bshift;
 }
 
 BigInt modulo2(const BigInt& a, const BigInt& b) {
@@ -290,7 +316,9 @@ int main(int argc, char **argv) {
     assert(a % b == BigInt::hex("539048ea8fb7c277c4b87e6ffbf11"));
     assert(top32(b, b.msb()) == 0xa824017a);
     assert(top64(b, b.msb()) == 0xa824017a138a875f);
+    assert(top64(b, b.msb() + 63) == 1);
     assert(top32(a, a.msb()) == 0xb96c24a9);
+    assert(top32(a, a.msb() + 31) == 1);
     assert(top32(a, a.msb() + 1) == 0x5cb61254);
     assert(top64(a, a.msb()) == 0xb96c24a9f55d72b9);
   }
@@ -310,6 +338,9 @@ int main(int argc, char **argv) {
     assert((v0 - v1) + v1 + v1 == BigInt::hex("c00000000000000000008"));
   }
 
-  assert(BigInt::hex("2542352412354554635652352234432545634") % BigInt::hex("34324123434345345") == BigInt::hex("c81a554d5702408c"));
+  assert(BigInt::hex("2542352412354554635652352234432545634")
+      % BigInt::hex("34324123434345345") == BigInt::hex("c81a554d5702408c"));
+
+  assert(BigInt::hex("F0F0F0F0F") == BigInt::bin("111100001111000011110000111100001111"));
   printf("Tests passed\n");
 }
