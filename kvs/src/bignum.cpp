@@ -102,6 +102,7 @@ void BigInt::print() const {
 }
 
 void mul(const BigInt& a, const BigInt& b, BigInt& result) {
+  result.digits.clear();
   result.digits.resize(a.digits.size() + b.digits.size());
 
   for (size_t i = 0; i < a.digits.size(); i++) {
@@ -218,6 +219,58 @@ void sub_inplace(BigInt& a, const BigInt& b) {
     carry >>= 32;
   }
   assert(carry == 0);
+  strip_leading_zeros(a);
+}
+
+void sub_shifted_inplace(BigInt& a, const BigInt& b, int b_shift) {
+  int full = b_shift / 32;
+  uint32_t partial = b_shift % 32;
+  uint32_t opposite = 32 - partial;
+
+  // Sign extended carry
+  int64_t sub_carry = 0;
+  uint32_t shift_carry = 0;
+  size_t i;
+
+  if (partial != 0) {
+    for (i = 0; i < b.digits.size(); i++) {
+      uint64_t v1 = a.digits[i + full];
+      uint32_t b_word = b.digits[i];
+      uint32_t v2 = b_word << partial | shift_carry;
+      shift_carry = b_word >> opposite;
+      uint64_t res = v1 - v2 + sub_carry;
+      a.digits[i + full] = res;
+      sub_carry = res;
+      // Sign extend sub_carry;
+      sub_carry >>= 32;
+    }
+    uint64_t v1 = a.digits[i + full];
+    uint64_t res = v1 - shift_carry + sub_carry;
+    a.digits[i + full] = res;
+    sub_carry = res;
+    sub_carry >>= 32;
+    i++;
+  } else {
+    for (i = 0; i < b.digits.size(); i++) {
+      uint64_t v1 = a.digits[i + full];
+      uint32_t v2 = b.digits[i];
+      uint64_t res = v1 - v2 + sub_carry;
+      a.digits[i + full] = res;
+      sub_carry = res;
+      // Sign extend sub_carry;
+      sub_carry >>= 32;
+    }
+  }
+
+  for (; sub_carry && i < a.digits.size(); i++) {
+    uint64_t v1 = a.digits[i + full];
+    uint64_t res = v1 + sub_carry;
+    a.digits[i + full] = res;
+    sub_carry = res;
+    // Sign extend sub_carry;
+    sub_carry >>= 32;
+  }
+  assert(sub_carry == 0);
   strip_leading_zeros(a);
 }
 
@@ -347,22 +400,14 @@ uint32_t BigInt::msb() const {
   return ::msb(*this);
 }
 
-
 void modulo(BigInt& a, const BigInt& b) {
   int a_msb = a.msb();
   int b_msb = b.msb();
   int max_shift = a_msb - b_msb;
 
   for (int shift = max_shift; shift >= 0; shift--) {
-
-    bool ge = cmp_shifted(a, b, shift) >= 0;
-    //auto bshifted = b.shift(shift);
-    //bool ge2 = a >= bshifted;
-    //assert(ge == ge2);
-
-    if (ge) {
-      auto bshifted = b.shift(shift);
-      a -= bshifted;
+    if (cmp_shifted(a, b, shift) >= 0) {
+      sub_shifted_inplace(a, b, shift);
     }
   }
 }
@@ -388,7 +433,7 @@ uint64_t top64(const BigInt& v, uint32_t msb) {
   return w0 << (compliment + 32) | w1 << compliment | w2 >> bshift;
 }
 
-void modulo2(BigInt& a, const BigInt& b) {
+void modulo2(BigInt& a, const BigInt& b, BigInt& tmp_product, BigInt& tmp_mul) {
   int b_msb = b.msb();
 
   // The algorithm below only works for large b.
@@ -405,32 +450,19 @@ void modulo2(BigInt& a, const BigInt& b) {
 
     // 2 zeros at msb
     uint64_t top = top64(a, msb + 2);
-    BigInt mul;
-    mul.digits.push_back(top / b_top);
+    tmp_mul.digits.resize(1);
+    tmp_mul.digits[0] = top / b_top;
 
-    // TODO: get rid of shift copy
-    BigInt subtrahend = (mul * b).shift(msb - b_msb - 31);
-    a -= subtrahend;
+    mul(tmp_mul, b, tmp_product);
+    sub_shifted_inplace(a, tmp_product, msb - b_msb - 31);
   }
 
   // fallback to per-bit shifts
   int max_shift = msb - b_msb;
 
   for (ssize_t shift = max_shift; shift >= 0; shift--) {
-
-    bool ge = cmp_shifted(a, b, shift) > 0;
-
-    //auto bshifted = b.shift(shift);
-    //bool ge2 = a >= bshifted;
-    //a.print();
-    //b.print();
-    //printf("shift %ld :  %d vs %d\n", shift, cmp(a, bshifted), cmp_shifted(a, b, shift));
-    //assert(ge == ge2);
-
-    if (ge) {
-      // TODO: optimize
-      auto bshifted = b.shift(shift);
-      a -= bshifted;
+    if (cmp_shifted(a, b, shift) > 0) {
+      sub_shifted_inplace(a, b, shift);
     }
   }
 }
@@ -439,7 +471,9 @@ void pow(const BigInt& in, const BigInt& d, const BigInt& mod, BigInt& out) {
   out.digits.clear();
   out.digits.push_back(1);
 
-  BigInt tmp;
+  BigInt tmp_product;
+  BigInt modulo_scratch1;
+  BigInt modulo_scratch2;
   BigInt v = in;
   uint32_t msb = d.msb();
   uint32_t mask = 1;
@@ -447,14 +481,14 @@ void pow(const BigInt& in, const BigInt& d, const BigInt& mod, BigInt& out) {
 
   for (uint32_t i = 0; i <= msb; i++) {
     if ((d.digits[idx] & mask) != 0) {
-      tmp = out * v;
-      tmp %= mod;
-      std::swap(out, tmp);
+      mul(out, v, tmp_product);
+      modulo2(tmp_product, mod, modulo_scratch1, modulo_scratch2);
+      std::swap(out, tmp_product);
     }
 
-    tmp = v * v;
-    tmp %= mod;
-    std::swap(v, tmp);
+    mul(v, v, tmp_product);
+    modulo2(tmp_product, mod, modulo_scratch1, modulo_scratch2);
+    std::swap(v, tmp_product);
 
     mask <<= 1;
     if (mask == 0) {
@@ -466,13 +500,17 @@ void pow(const BigInt& in, const BigInt& d, const BigInt& mod, BigInt& out) {
 
 
 BigInt BigInt::operator%(const BigInt& other) const {
+  BigInt scatch1;
+  BigInt scatch2;
   BigInt result = *this;
-  modulo2(result, other);
+  modulo2(result, other, scatch1, scatch2);
   return result;
 }
 
 BigInt& BigInt::operator%=(const BigInt& other) {
-  modulo2(*this, other);
+  BigInt scatch1;
+  BigInt scatch2;
+  modulo2(*this, other, scatch1, scatch2);
   return *this;
 }
 
@@ -527,8 +565,6 @@ int main(int argc, char **argv) {
             BigInt b = base << bpreshift;
             int res = base == zero ? 0 : (ashift == bpreshift + bshift ? 0
                 : (ashift < bpreshift + bshift? -1 : 1));
-            printf("a = %d, b %d + %d - %d\n", ashift, bpreshift, bshift, res);
-            base.print();
             if (cmp_shifted(a, b, bshift) != res) {
               cmp_shifted(a, b, bshift);
             }
@@ -618,7 +654,7 @@ int main(int argc, char **argv) {
     BigInt out;
     pow(enc, d, n, out);
     assert(out == in);
-    for (int i = 1; i < 1000; i++) {
+    for (int i = 1; i < 50000; i++) {
       const auto in = BigInt::fromUint32(i);
       BigInt enc;
       pow(in, BigInt::fromUint32(65537), n, enc);
