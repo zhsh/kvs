@@ -608,7 +608,7 @@ int main(int argc, char **argv) {
 
     assert(top32(b, b.msb()) == 0xa824017a);
     assert(top64(b, b.msb()) == 0xa824017a138a875f);
-    assert(top64(b, b.msb() + 63) == 1);
+    assert(top64(b, b.msb() + 31) == 0x1504802f4);
     assert(top32(a, a.msb()) == 0xb96c24a9);
     assert(top32(a, a.msb() + 31) == 1);
     assert(top32(a, a.msb() + 1) == 0x5cb61254);
