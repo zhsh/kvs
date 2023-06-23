@@ -63,6 +63,7 @@ BigInt BigInt::bin(const std::string& str) {
     }
     res.digits.push_back(v);
   }
+  if (res.digits.back() == 0 && res.digits.size() > 1) res.digits.pop_back();
   return res;
 }
 
@@ -86,6 +87,7 @@ BigInt BigInt::hex(const std::string& str) {
     }
     res.digits.push_back(v);
   }
+  if (res.digits.back() == 0 && res.digits.size() > 1) res.digits.pop_back();
   return res;
 }
 
@@ -225,6 +227,7 @@ void sub_shifted_inplace(BigInt& a, const BigInt& b, int b_shift) {
   int full = b_shift / 32;
   uint32_t partial = b_shift % 32;
   uint32_t opposite = 32 - partial;
+  assert(a.digits.size() >= b.digits.size() + full);
 
   // Sign extended carry
   int64_t sub_carry = 0;
@@ -243,12 +246,14 @@ void sub_shifted_inplace(BigInt& a, const BigInt& b, int b_shift) {
       // Sign extend sub_carry;
       sub_carry >>= 32;
     }
-    uint64_t v1 = a.digits[i + full];
-    uint64_t res = v1 - shift_carry + sub_carry;
-    a.digits[i + full] = res;
-    sub_carry = res;
-    sub_carry >>= 32;
-    i++;
+    if (shift_carry) {
+      uint64_t v1 = a.digits[i + full];
+      uint64_t res = v1 - shift_carry + sub_carry;
+      a.digits[i + full] = res;
+      sub_carry = res;
+      sub_carry >>= 32;
+      i++;
+    }
   } else {
     for (i = 0; i < b.digits.size(); i++) {
       uint64_t v1 = a.digits[i + full];
