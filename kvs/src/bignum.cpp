@@ -3,13 +3,12 @@
 #include <vector>
 #include <stdint.h>
 #include <string>
-#include <string_view>
 
 
 struct BigInt {
   BigInt() = default;
-  static BigInt bin(const std::string_view str);
-  static BigInt hex(const std::string_view str);
+  static BigInt bin(const std::string& str);
+  static BigInt hex(const std::string& str);
   static BigInt fromUint32(uint32_t v);
 
   std::vector<uint32_t> digits;
@@ -45,7 +44,7 @@ void strip_leading_zeros(BigInt& a) {
   while (a.digits.size() > 1 && a.digits.back() == 0) a.digits.pop_back();
 }
 
-BigInt BigInt::bin(const std::string_view str) {
+BigInt BigInt::bin(const std::string& str) {
   BigInt res;
   for (int i = str.size(); i >= 0; i-=32) {
 
@@ -67,7 +66,7 @@ BigInt BigInt::bin(const std::string_view str) {
   return res;
 }
 
-BigInt BigInt::hex(const std::string_view str) {
+BigInt BigInt::hex(const std::string& str) {
   BigInt res;
   for (int i = str.size(); i >= 0; i-=8) {
 
