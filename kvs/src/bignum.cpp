@@ -1,38 +1,9 @@
+#include "bignum.hpp"
 #include <stdio.h>
 #include <cassert>
 #include <vector>
 #include <stdint.h>
 #include <string>
-
-
-struct BigInt {
-  BigInt() = default;
-  static BigInt bin(const std::string& str);
-  static BigInt hex(const std::string& str);
-  static BigInt fromUint32(uint32_t v);
-
-  std::vector<uint32_t> digits;
-
-  void print() const;
-  BigInt operator*(const BigInt& other) const;
-  BigInt operator+(const BigInt& other) const;
-  BigInt operator-(const BigInt& other) const;
-  bool operator==(const BigInt& other) const;
-  bool operator!=(const BigInt& other) const;
-  bool operator<(const BigInt& other) const;
-  bool operator>(const BigInt& other) const;
-  bool operator<=(const BigInt& other) const;
-  bool operator>=(const BigInt& other) const;
-  BigInt operator%(const BigInt& other) const;
-  BigInt& operator+=(const BigInt& other);
-  BigInt& operator-=(const BigInt& other);
-  BigInt& operator%=(const BigInt& other);
-  BigInt operator <<(uint32_t num) const;
-  BigInt shift(uint32_t num) const;
-
-  // Most significant bit
-  uint32_t msb() const;
-};
 
 BigInt BigInt::fromUint32(uint32_t v) {
   BigInt res;
