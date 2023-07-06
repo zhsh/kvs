@@ -34,4 +34,6 @@ struct BigInt {
   uint32_t msb() const;
 };
 
+void pow(const BigInt& in, const BigInt& d, const BigInt& mod, BigInt& out);
+
 #endif  // __BIGNUM_H__

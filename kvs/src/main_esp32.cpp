@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <BluetoothSerial.h>
 #include "storage.hpp"
+#include "bignum.hpp"
 
 /* Check if Bluetooth configurations are enabled in the SDK */
 /* If not, then you have to recompile the SDK */
@@ -15,6 +16,11 @@ FlashStorage storage;
 BluetoothSerial SerialBT;
 
 void setup() {
+  Serial.begin(9600);
+  Serial.println("Initialized.");
+}
+
+void _setup() {
   Serial.begin(115200);
   // delay(5000);
   Serial.println("Initialized.");
@@ -43,7 +49,46 @@ String readLine() {
   }
 }
 
+void runEncryptionBenchmarks(int rounds) {
+  const auto n = BigInt::hex("8932aba75549986ced8038695dfe89b5");
+  for (int i = 0; i < rounds; ++i) {
+      const auto in = BigInt::fromUint32(i + 2);
+      BigInt enc;
+      pow(in, BigInt::fromUint32(65537), n, enc);
+  }
+}
+
+void runDecryptionBenchmarks(int rounds) {
+  const auto d = BigInt::hex("2f92cf6ccda9205e17a1d45e2351c4fd");
+  const auto n = BigInt::hex("8932aba75549986ced8038695dfe89b5");
+  for (int i = 0; i < rounds; ++i) {
+      const auto in = BigInt::fromUint32(i + 2);
+      BigInt out;
+      pow(in, d, n, out);
+  }
+}
+
 void loop() {
+  int ROUNDS = 100;
+
+  auto startTime = micros();
+  runEncryptionBenchmarks(ROUNDS);
+  auto encTime = micros() - startTime;
+  Serial.print("Encryption: ");
+  Serial.print(encTime / ROUNDS);
+  Serial.println(" micro sec");
+
+  startTime = micros();
+  runDecryptionBenchmarks(ROUNDS);
+  auto decTime = micros() - startTime;
+  Serial.print("Decryption: ");
+  Serial.print(decTime / ROUNDS);
+  Serial.println(" micro sec");
+
+  delay(2000);
+}
+
+void _loop() {
   String s = readLine();
   Serial.println(s);
   String toSend = s;
