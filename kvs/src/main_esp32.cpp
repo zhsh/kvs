@@ -22,6 +22,17 @@
 
 FlashStorage storage;
 
+class MyServerCallbacks: public BLEServerCallbacks {
+  void onConnect(BLEServer* pServer) {
+    Serial.println("onConnect");
+  };
+  void onDisconnect(BLEServer* pServer) {
+    Serial.println("onDisconnect");
+    Serial.println("Starting to advertise");
+    pServer->getAdvertising()->start();
+  }
+};
+
 class MyCallbacks : public BLECharacteristicCallbacks
 {
   BLECharacteristic* _output;
@@ -35,6 +46,7 @@ public:
 
   void onWrite(BLECharacteristic *pCharacteristic)
   {
+    Serial.println("onWrite starts");
     std::string value = pCharacteristic->getValue();
 
     if (value.length() > 0)
@@ -52,12 +64,12 @@ public:
       std::string output = value + "_secret";
       _output->setValue(output);
     }
+    Serial.println("onWrite ends");
   }
 };
 
 void setup() {
   Serial.begin(9600);
-  // delay(5000);
   Serial.println("Initialized.");
   storage.Init();
   auto value = storage.Get("foo");
@@ -65,6 +77,7 @@ void setup() {
 
   BLEDevice::init("Key-Value Storage");
   BLEServer *pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new MyServerCallbacks());
   BLEService *pService = pServer->createService(SERVICE_UUID);
   BLECharacteristic *pInputCharacteristic = pService->createCharacteristic(
                                          INPUT_UUID,
@@ -88,7 +101,8 @@ void setup() {
   pAdvertising->setScanResponse(true);
   pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
   pAdvertising->setMinPreferred(0x12);
-  BLEDevice::startAdvertising();
+  Serial.println("Starting to advertise");
+  pServer->getAdvertising()->start();
   Serial.println("Characteristic defined! Now you can read it in your phone!");
 }
 
