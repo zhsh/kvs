@@ -195,10 +195,10 @@ void Storage::SetSectorAndPageSize(uint32_t sector_sz, uint32_t page_sz) {
 
 }
 
-Storage::Status Storage::Put(const char* key, const char* value) {
+Storage::Status Storage::Put(const std::string& key, const std::string& value) {
 
-  uint32_t key_length = strlen(key);
-  uint32_t value_length = strlen(value);
+  uint32_t key_length = key.length();
+  uint32_t value_length = value.length();
   uint32_t total_length = key_length + value_length;
 
   if (key_length + value_length > 254) {
@@ -212,7 +212,7 @@ Storage::Status Storage::Put(const char* key, const char* value) {
   ReadNext(&offset, buffer_.data(), strlen(kMagic));
 
   // Not initialized, do lazy init
-  if (strncmp(buffer_.data(), kMagic, strlen(kMagic)) != 0) {
+  if (memcmp(buffer_.data(), kMagic, strlen(kMagic)) != 0) {
     int erase_size = strlen(kMagic) + 1;
     Erase(0, (erase_size + sector_size_ - 1) & ~(sector_size_ - 1));
     Write(0, kMagic, strlen(kMagic));
@@ -228,7 +228,7 @@ Storage::Status Storage::Put(const char* key, const char* value) {
       if (lens[1] == key_length) {
         ReadNext(&offset, buffer_.data(), key_length);
 
-        if (strncmp(buffer_.data(), key, key_length) == 0) {
+        if (memcmp(buffer_.data(), key.data(), key_length) == 0) {
           // Wipe old key, value and key length
           bzero(buffer_.data(), end - start);
           buffer_[0] = lens[0];
@@ -255,8 +255,8 @@ Storage::Status Storage::Put(const char* key, const char* value) {
   // Write total length first. If it fails we just have a bad record.
   buffer_[0] = total_length;
   buffer_[1] = key_length;
-  memcpy(buffer_.data() + 2, key, key_length);
-  memcpy(buffer_.data() + 2 + key_length, value, value_length);
+  memcpy(buffer_.data() + 2, key.data(), key_length);
+  memcpy(buffer_.data() + 2 + key_length, value.data(), value_length);
   uint32_t padded_length = (2 + total_length + page_size_ - 1) & ~(page_size_ - 1);
   for (uint32_t i = total_length + 2; i < padded_length; i++)
     buffer_[i] = 0;
@@ -264,26 +264,24 @@ Storage::Status Storage::Put(const char* key, const char* value) {
   return STORAGE_OK;
 }
 
-std::string Storage::Get(const char *key) {
+std::string Storage::Get(const std::string& key) {
   uint8_t lens[2];
 
   uint32_t offset = 0;
   ReadNext(&offset, buffer_.data(), strlen(kMagic));
 
   // Not initialized, no result
-  if (strncmp(buffer_.data(), kMagic, strlen(kMagic)) != 0)
+  if (memcmp(buffer_.data(), kMagic, strlen(kMagic)) != 0)
     return "";
-
-  uint32_t key_length = strlen(key);
 
   while (true) {
     ReadNext(&offset, (char*)lens, sizeof(lens));
     if (lens[0] == 255) return "";
     uint32_t end = (offset + lens[0] + page_size_ - 1) & ~(page_size_ - 1);
-    if (lens[1] < lens[0] && lens[1] == key_length) {
+    if (lens[1] < lens[0] && lens[1] == key.length()) {
       // Key length match, read key
       ReadNext(&offset, buffer_.data(), lens[1]);
-      if (strncmp(buffer_.data(), key, key_length) == 0) {
+      if (memcmp(buffer_.data(), key.data(), key.length()) == 0) {
         // Found match, read value
         ReadNext(&offset, buffer_.data(), lens[0] - lens[1]);
         return std::string(buffer_.data(), lens[0] - lens[1]);

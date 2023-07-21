@@ -12,6 +12,8 @@ SerialIO Serial;
 #include "storage.cpp"
 #endif
 
+using namespace std::string_literals;
+
 class MockStorage : public Storage {
   public:
     virtual ~MockStorage() = default;
@@ -70,8 +72,7 @@ class MockStorage : public Storage {
 };
 
 TEST(StorageTest, Foo) {
-  using testing::Eq;
-
+   using testing::Eq;
 
   delay(5000);
   Serial.println("Start testing");
@@ -85,10 +86,11 @@ TEST(StorageTest, Foo) {
   EXPECT_THAT(s->Get("bar"), Eq(""));
 
   s->Put("zzzzzzzz", "a");
-  s->Put("foo", "123");
+  s->Put("f\0oo"s, "1\023"s);
   s->Put("bar", "456");
   EXPECT_THAT(s->Get("bar"), Eq("456"));
-  EXPECT_THAT(s->Get("foo"), Eq("123"));
+  EXPECT_THAT(s->Get("f\0oo"s), Eq("1\023"s));
+  EXPECT_THAT(s->Get("f\0aa"s), Eq(""));
   EXPECT_THAT(s->Get("baz"), Eq(""));
 
   // Not implemented yet
