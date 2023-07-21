@@ -24,8 +24,8 @@ class Storage {
     };
 
     virtual bool Init() = 0;
-    Status Put(const char* key, const char* value);
-    std::string Get(const char* key);
+    Status Put(const std::string& key, const std::string& value);
+    std::string Get(const std::string& key);
     std::string List() const;
 
     static const char* kMagic;
