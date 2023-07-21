@@ -58,7 +58,7 @@ BigInt BigInt::hex(const std::string& str) {
     }
     res.digits.push_back(v);
   }
-  while (res.digits.back() == 0 && res.digits.size() > 1) res.digits.pop_back();
+  while (res.digits.size() > 1 && res.digits.back() == 0) res.digits.pop_back();
   return res;
 }
 
