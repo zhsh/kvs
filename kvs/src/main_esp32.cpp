@@ -4,6 +4,7 @@
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
+#include <BLE2902.h>
 
 #include "storage.hpp"
 
@@ -58,6 +59,7 @@ class MyCallbacks : public BLECharacteristicCallbacks
 
       std::string output = value + "_secret";
       OutputCharacteristic->setValue(output);
+      OutputCharacteristic->notify();
     }
     Serial.println("onWrite ends");
   }
@@ -76,17 +78,16 @@ void setup() {
   BLEService *pService = pServer->createService(SERVICE_UUID);
   InputCharacteristic = pService->createCharacteristic(
                                          INPUT_UUID,
-                                         BLECharacteristic::PROPERTY_READ |
                                          BLECharacteristic::PROPERTY_WRITE
                                        );
 
   OutputCharacteristic = pService->createCharacteristic(
                                          OUTPUT_UUID,
                                          BLECharacteristic::PROPERTY_READ |
-                                         BLECharacteristic::PROPERTY_WRITE
+                                         BLECharacteristic::PROPERTY_NOTIFY
                                        );
+  OutputCharacteristic->addDescriptor(new BLE2902());
 
-  OutputCharacteristic->setValue("Value");
   InputCharacteristic->setValue("Key");
   InputCharacteristic->setCallbacks(new MyCallbacks());
 
