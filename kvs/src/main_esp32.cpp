@@ -47,17 +47,11 @@ class MyCallbacks : public BLECharacteristicCallbacks
 
     if (value.length() > 0 && OutputCharacteristic != nullptr)
     {
-      Serial.println("*********");
-      Serial.print("New value: ");
-      for (int i = 0; i < value.length(); i++)
-      {
-        Serial.print(value[i]);
-      }
+      std::string output = storage.Get(value);
+      Serial.print(value.c_str());
+      Serial.print(": ");
+      Serial.println(output.c_str());
 
-      Serial.println();
-      Serial.println("*********");
-
-      std::string output = value + "_secret";
       OutputCharacteristic->setValue(output);
       OutputCharacteristic->notify();
     }
@@ -65,12 +59,47 @@ class MyCallbacks : public BLECharacteristicCallbacks
   }
 };
 
+void printKeyValue(const std::string key) {
+  auto value = storage.Get(key);
+  Serial.print(key.c_str());
+  Serial.print(": ");
+  Serial.println(value.c_str());
+}
+
+void setup_write() {
+  Serial.begin(9600);
+  Serial.println("Initialized.");
+  storage.Init();
+  Serial.println("Storage initialized.");
+
+  Serial.print("Putting keys and values... ");
+  storage.Put("Firstname", "Antonio");
+  storage.Put("Lastname", "Banderas");
+  storage.Put("Age", "30");
+  Serial.println("DONE");
+
+  printKeyValue("Firstname");
+  printKeyValue("Lastname");
+  printKeyValue("Age");
+  printKeyValue("Salary");
+}
+
+void setup_read() {
+  Serial.begin(9600);
+  Serial.println("Initialized.");
+  storage.Init();
+  Serial.println("Storage initialized.");
+
+  printKeyValue("Firstname");
+  printKeyValue("Lastname");
+  printKeyValue("Age");
+  printKeyValue("Salary");
+}
+
 void setup() {
   Serial.begin(9600);
   Serial.println("Initialized.");
   storage.Init();
-  auto value = storage.Get("foo");
-  Serial.println(value.c_str());
 
   BLEDevice::init("Key-Value Storage");
   BLEServer *pServer = BLEDevice::createServer();
