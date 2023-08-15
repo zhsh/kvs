@@ -17,15 +17,15 @@
 // See the following for generating UUIDs:
 // https://www.uuidgenerator.net/
 
-#define SERVICE_UUID  "64dfd1b8-0c60-46b7-9840-76c1fdcbe011"
-#define INPUT_UUID    "a30b08c5-94a3-4678-a026-47dcf3ebec1f"
-#define OUTPUT_UUID   "4c599c12-9cff-4d7b-aea6-b811907f367e"
+#define SERVICE_UUID            "64dfd1b8-0c60-46b7-9840-76c1fdcbe011"
+#define READ_KEY_INPUT_UUID     "a30b08c5-94a3-4678-a026-47dcf3ebec1f"
+#define READ_VALUE_OUTPUT_UUID  "4c599c12-9cff-4d7b-aea6-b811907f367e"
 
 
 FlashStorage storage;
 
-BLECharacteristic* InputCharacteristic;
-BLECharacteristic* OutputCharacteristic;
+BLECharacteristic* ReadKeyInput;
+BLECharacteristic* ReadValueOutput;
 
 class MyServerCallbacks: public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
@@ -45,15 +45,15 @@ class MyCallbacks : public BLECharacteristicCallbacks
     Serial.println("onWrite starts");
     std::string value = pCharacteristic->getValue();
 
-    if (value.length() > 0 && OutputCharacteristic != nullptr)
+    if (value.length() > 0 && ReadValueOutput != nullptr)
     {
       std::string output = storage.Get(value);
       Serial.print(value.c_str());
       Serial.print(": ");
       Serial.println(output.c_str());
 
-      OutputCharacteristic->setValue(output);
-      OutputCharacteristic->notify();
+      ReadValueOutput->setValue(output);
+      ReadValueOutput->notify();
     }
     Serial.println("onWrite ends");
   }
@@ -96,7 +96,7 @@ void setup_read() {
   printKeyValue("Salary");
 }
 
-void setup() {
+void setup_main() {
   Serial.begin(9600);
   Serial.println("Initialized.");
   storage.Init();
@@ -105,20 +105,20 @@ void setup() {
   BLEServer *pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
   BLEService *pService = pServer->createService(SERVICE_UUID);
-  InputCharacteristic = pService->createCharacteristic(
-                                         INPUT_UUID,
+  ReadKeyInput = pService->createCharacteristic(
+                                         READ_KEY_INPUT_UUID,
                                          BLECharacteristic::PROPERTY_WRITE
                                        );
 
-  OutputCharacteristic = pService->createCharacteristic(
-                                         OUTPUT_UUID,
+  ReadValueOutput = pService->createCharacteristic(
+                                         READ_VALUE_OUTPUT_UUID,
                                          BLECharacteristic::PROPERTY_READ |
                                          BLECharacteristic::PROPERTY_NOTIFY
                                        );
-  OutputCharacteristic->addDescriptor(new BLE2902());
+  ReadValueOutput->addDescriptor(new BLE2902());
 
-  InputCharacteristic->setValue("Key");
-  InputCharacteristic->setCallbacks(new MyCallbacks());
+  ReadKeyInput->setValue("Key");
+  ReadKeyInput->setCallbacks(new MyCallbacks());
 
   pService->start();
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
@@ -129,6 +129,10 @@ void setup() {
   Serial.println("Starting to advertise");
   pServer->getAdvertising()->start();
   Serial.println("Characteristic defined! Now you can read it in your phone!");
+}
+
+void setup() {
+  setup_main();
 }
 
 void loop() {
