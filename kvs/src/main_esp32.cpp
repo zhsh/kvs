@@ -20,12 +20,21 @@
 #define SERVICE_UUID            "64dfd1b8-0c60-46b7-9840-76c1fdcbe011"
 #define READ_KEY_INPUT_UUID     "a30b08c5-94a3-4678-a026-47dcf3ebec1f"
 #define READ_VALUE_OUTPUT_UUID  "4c599c12-9cff-4d7b-aea6-b811907f367e"
+#define WRITE_KEY_INPUT_UUID    "3dadb224-692c-4e3b-b02f-b5d1c2c43b13"
+#define WRITE_VALUE_INPUT_UUID  "7775c5de-9143-4d69-9619-c4c537e926f7"
+#define WRITE_READY_INPUT_UUID  "9eaa2c33-1f21-441a-924c-8399e5ee9b90"
 
 
 FlashStorage storage;
 
 BLECharacteristic* ReadKeyInput;
 BLECharacteristic* ReadValueOutput;
+BLECharacteristic* WriteKeyInput;
+BLECharacteristic* WriteValueInput;
+BLECharacteristic* WriteReadyInput;
+
+std::string recentWriteKey;
+std::string recentWriteValue;
 
 class MyServerCallbacks: public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
@@ -38,7 +47,7 @@ class MyServerCallbacks: public BLEServerCallbacks {
   }
 };
 
-class MyCallbacks : public BLECharacteristicCallbacks
+class ReadCallback : public BLECharacteristicCallbacks
 {
   void onWrite(BLECharacteristic *pCharacteristic)
   {
@@ -56,6 +65,38 @@ class MyCallbacks : public BLECharacteristicCallbacks
       ReadValueOutput->notify();
     }
     Serial.println("onWrite ends");
+  }
+};
+
+class WriteKeyCallback : public BLECharacteristicCallbacks
+{
+  void onWrite(BLECharacteristic *pCharacteristic)
+  {
+    Serial.print("WriteKeyCallback: ");
+    recentWriteKey = pCharacteristic->getValue();
+    Serial.println(recentWriteKey.c_str());
+  }
+};
+
+class WriteValueCallback : public BLECharacteristicCallbacks
+{
+  void onWrite(BLECharacteristic *pCharacteristic)
+  {
+    Serial.print("WriteValueCallback: ");
+    recentWriteValue = pCharacteristic->getValue();
+    Serial.println(recentWriteValue.c_str());
+  }
+};
+
+class WriteReadyCallback : public BLECharacteristicCallbacks
+{
+  void onWrite(BLECharacteristic *pCharacteristic)
+  {
+    Serial.println("WriteReadyCallback");
+    if (!recentWriteKey.empty() && !recentWriteValue.empty()) {
+      Serial.print(recentWriteKey.c_str()); Serial.print(": "); Serial.println(recentWriteValue.c_str());
+      storage.Put(recentWriteKey, recentWriteValue);
+    }
   }
 };
 
@@ -118,7 +159,25 @@ void setup_main() {
   ReadValueOutput->addDescriptor(new BLE2902());
 
   ReadKeyInput->setValue("Key");
-  ReadKeyInput->setCallbacks(new MyCallbacks());
+  ReadKeyInput->setCallbacks(new ReadCallback());
+
+  WriteKeyInput = pService->createCharacteristic(
+                                         WRITE_KEY_INPUT_UUID,
+                                         BLECharacteristic::PROPERTY_WRITE
+                                       );
+  WriteKeyInput->setCallbacks(new WriteKeyCallback());
+
+  WriteValueInput = pService->createCharacteristic(
+                                         WRITE_VALUE_INPUT_UUID,
+                                         BLECharacteristic::PROPERTY_WRITE
+                                       );
+  WriteValueInput->setCallbacks(new WriteValueCallback());
+
+  WriteReadyInput = pService->createCharacteristic(
+                                         WRITE_READY_INPUT_UUID,
+                                         BLECharacteristic::PROPERTY_WRITE
+                                       );
+  WriteReadyInput->setCallbacks(new WriteReadyCallback());
 
   pService->start();
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
